@@ -1,0 +1,60 @@
+# Operating System files
+.DS_Store
+Thumbs.db
+
+# Node.js
+node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+venv/
+env/
+*.env
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+
+# .NET
+bin/
+obj/
+
+# JetBrains IDEs (IntelliJ IDEA, PhpStorm, PyCharm, WebStorm, etc.)
+.idea/
+
+# VSCode
+.vscode/
+
+# Logs
+*.log
+
+# Dependency directories
+node_modules/
+bower_components/
+
+# Build directories
+build/
+dist/
+
+# Package distribution files
+*.tar.gz
+*.zip
+*.rar
+
+# IDE and editor directories and files
+.vscode/
+.idea/
+
+# macOS
+*.dmg
+*.pkg
+*.app
+
+
+
+config/config.yml
