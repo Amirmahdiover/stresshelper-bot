@@ -58,3 +58,5 @@ dist/
 
 
 config/config.yml
+
+mongodb/
