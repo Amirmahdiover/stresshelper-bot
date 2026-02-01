@@ -26,14 +26,8 @@ image_size = config_yaml.get("image_size", "512x512")
 n_chat_modes_per_page = config_yaml.get("n_chat_modes_per_page", 5)
 daily_question_chat_id=config_env.get('group_id')  # Replace with actual chat ID
 # Define the MongoDB URI after loading the environment variables
-mongodb_uri = (
-    f"mongodb://{config_env.get('MONGODB_USERNAME', 'root')}:"
-    f"{config_env.get('MONGODB_PASSWORD', 'example')}@"
-    f"mongo:{config_env['MONGODB_PORT']}/"
-    f"?authSource=admin"
-)
-# Debugging print to verify mongodb_uri
-print("Constructed mongodb_uri:", mongodb_uri)  # Ensure mongodb_uri is being created correctly
+mongodb_uri = "mongodb://mongo:27017"
+
 
 # chat_modes
 with open(config_dir / "chat_modes.yml", 'r') as f:
