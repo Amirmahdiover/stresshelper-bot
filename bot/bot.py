@@ -256,10 +256,10 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
                 "html": ParseMode.HTML,
                 "markdown": ParseMode.MARKDOWN
             }[config.chat_modes[chat_mode]["parse_mode"]]
-
+            stream_prompt = 'تو یک چت‌بات بی‌ادب، طعنه‌زن، و با لحن مسخره‌کننده هستی. همیشه سعی کن جواب‌ها رو با نیش و کنایه بدی. اگه سوال ساده یا خنده‌دار بود، کاربر رو مسخره کن. از الفاظ سنگین استفاده نکن ولی رک و بی‌پرده حرف بزن. هیچ تلاشی برای مودب بودن نکن. هدف اینه که کاربر بفهمه که با یه بات خوش‌اخلاق طرف نیست! پاسخ‌هات باید کوتاه و تیز باشن، حوصله‌ی سخنرانی نداری.'
             chatgpt_instance = openai_utils.ChatGPT(model=current_model)
             if config.enable_message_streaming:
-                gen = chatgpt_instance.send_message_stream(_message, dialog_messages=dialog_messages, chat_mode=chat_mode)
+                gen = chatgpt_instance.send_message_stream(_message, dialog_messages=dialog_messages, chat_mode=chat_mode, system_prompt=stream_prompt)
             else:
                 answer, (n_input_tokens, n_output_tokens), n_first_dialog_messages_removed = await chatgpt_instance.send_message(
                     _message,
@@ -693,7 +693,7 @@ async def opinionated_analysis_handle(update: Update, context: CallbackContext):
 
     # 💬 Custom prompt for opinionated feedback
     prompt = f"""
-تو یه ناظر باهوشی هستی که داره یه گروه چت رو زیر نظر می‌گیره. پایین ۵۰ تا از آخرین پیام‌های اعضای گروه رو می‌بینی.
+تو یه ناظر باهوشی هستی که داره یه گروه چت رو زیر نظر می‌گیره. پایین 1۵۰ تا از آخرین پیام‌های اعضای گروه رو می‌بینی.
 
 فقط خلاصه نکن، رک و پوست‌کنده نظرت رو بگو، بی‌تعارف و بی‌سانسور:
 - حال و هوای کلی چت چی بود؟ جدی؟ خنده‌دار؟ چرت و پرت؟
@@ -702,7 +702,8 @@ async def opinionated_analysis_handle(update: Update, context: CallbackContext):
 - کل این بحث مفید بود یا یه مشت وقت‌تلف‌کنی بی‌نتیجه؟
 - یه نصیحت درست‌درمون بهشون بکن که بفهمن چطوری باید درست و حسابی بحث کنن.
 - اگه یه سوال یا بحث مشخص مطرح شده، نظر خودت رو هم بی‌ملاحظه بگو، بدون اینکه بخوای کسی رو خوشحال یا ناراحت کنی. فقط راستشو بگو.
-
+- پیامت کوتاه باشه حدود 250 کلمه باشه
+- یه خلاصه از چت هایی که میبینی بگو
 متن چت:
 {combined_text}
 """
@@ -711,7 +712,7 @@ async def opinionated_analysis_handle(update: Update, context: CallbackContext):
         chatgpt = openai_utils.ChatGPT(model="gpt-4o")
         chat_mode = db.get_user_attribute(update.message.from_user.id, "current_chat_mode")
         response, *_ = await chatgpt.send_message(prompt, chat_mode=chat_mode)
-        await update.message.reply_text(f"🧠 Group Chat Feedback:\n\n{response}")
+        await update.message.reply_text(f"🧠 خلاصه و نظر راجب 150 چت آخر:\n\n{response}")
     except Exception as e:
         await update.message.reply_text(f"Failed to analyze messages: {e}")
 

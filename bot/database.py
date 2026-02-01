@@ -47,7 +47,7 @@ class Database:
 
         self.group_message_collection.insert_one(message_dict)
 
-    def get_last_group_messages(self, chat_id: int, limit: int = 50):
+    def get_last_group_messages(self, chat_id: int, limit: int =150):
         cursor = self.group_message_collection.find(
             {"chat_id": chat_id}
         ).sort("date", pymongo.DESCENDING).limit(limit)
