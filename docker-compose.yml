@@ -9,9 +9,9 @@ services:
       - 127.0.0.1:${MONGODB_PORT:-27017}:27017
     volumes:
       - mongo-data:/data/db               # ← changed: use named volume (recommended)
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_ROOT_USERNAME:-admin}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_ROOT_PASSWORD:-verystrongpass123}
+    # environment:
+    #   MONGO_INITDB_ROOT_USERNAME: ${MONGODB_ROOT_USERNAME:-admin}
+    #   MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_ROOT_PASSWORD:-verystrongpass123}
       # MONGO_INITDB_DATABASE: stresshelper   # optional – creates this db on first start
 
   mongo_express:
