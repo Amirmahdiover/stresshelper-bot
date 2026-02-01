@@ -1,46 +1,49 @@
+version: '3.8'   # recommended to add version
+
 services:
   mongo:
     container_name: mongo
     image: mongo:latest
     restart: always
     ports:
-      - 127.0.0.1:${MONGODB_PORT}:27017
+      - 127.0.0.1:${MONGODB_PORT:-27017}:27017
     volumes:
-      - ${MONGODB_PATH:-./mongodb}:/data/db
+      - mongo-data:/data/db               # ← changed: use named volume (recommended)
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_ROOT_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_ROOT_PASSWORD}
-    env_file:
-      - config/config.env     # keep if you have other vars, but not needed for credentials anymore
+      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_ROOT_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_ROOT_PASSWORD:-verystrongpass123}
+      # MONGO_INITDB_DATABASE: stresshelper   # optional – creates this db on first start
 
   mongo_express:
     container_name: mongo-express
     image: mongo-express:latest
     restart: always
     ports:
-      - 127.0.0.1:${MONGO_EXPRESS_PORT}:8081
+      - 127.0.0.1:${MONGO_EXPRESS_PORT:-8081}:8081
     environment:
       ME_CONFIG_MONGODB_SERVER: mongo
-      ME_CONFIG_MONGODB_PORT: ${MONGODB_PORT}
+      ME_CONFIG_MONGODB_PORT: 27017
       ME_CONFIG_MONGODB_AUTH_DATABASE: admin
-      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGODB_ROOT_USERNAME}
-      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGODB_ROOT_PASSWORD}
-      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USERNAME}
-      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD}
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGODB_ROOT_USERNAME:-admin}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGODB_ROOT_PASSWORD:-verystrongpass123}
+      ME_CONFIG_BASICAUTH: true
+      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USERNAME:-amirmahdi}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD:-Amirmahdi1234}
     depends_on:
       - mongo
-    env_file:
-      - config/config.env     # optional now
 
   chatgpt_telegram_bot:
     container_name: chatgpt_telegram_bot
+    build:
+      context: .
+      dockerfile: Dockerfile
     command: python3 bot/bot.py
     restart: always
-    build:
-      context: "."
-      dockerfile: Dockerfile
     depends_on:
       - mongo
     env_file:
       - config/config.env
-      # .env is auto-loaded by compose → no need to list it
+
+# Recommended: use named volume instead of ./mongodb (prevents git/permission issues)
+volumes:
+  mongo-data:
