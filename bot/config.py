@@ -24,7 +24,7 @@ enable_message_streaming = config_yaml.get("enable_message_streaming", True)
 return_n_generated_images = config_yaml.get("return_n_generated_images", 1)
 image_size = config_yaml.get("image_size", "512x512")
 n_chat_modes_per_page = config_yaml.get("n_chat_modes_per_page", 5)
-daily_question_chat_id=-1003501761776  # Replace with actual chat ID
+daily_question_chat_id=config_env.get('group_id')  # Replace with actual chat ID
 # Define the MongoDB URI after loading the environment variables
 mongodb_uri = (
     f"mongodb://{config_env.get('MONGODB_USERNAME', 'root')}:"
