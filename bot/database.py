@@ -1,9 +1,13 @@
+from logging import config
 from typing import Optional, Any
 
 import pymongo
 import uuid
 from datetime import datetime
-
+import hashlib
+import numpy as np
+from numpy import dot
+from numpy.linalg import norm
 import config
 
 
@@ -14,6 +18,44 @@ class Database:
 
         self.user_collection = self.db["user"]
         self.dialog_collection = self.db["dialog"]
+
+        self.group_message_collection = self.db["group_messages"]
+
+        self.daily_question_collection = self.db["daily_questions"]
+        self.daily_question_collection.create_index("hash", unique=True)
+
+        # optional but recommended index for fast lookup
+        self.group_message_collection.create_index(
+            [("chat_id", pymongo.ASCENDING), ("date", pymongo.DESCENDING)]
+        )
+    def save_group_message(
+        self,
+        chat_id: int,
+        user_id: int,
+        username: str,
+        text: str,
+        date: datetime
+    ):
+        print(f"Saved group message: {chat_id=} {user_id=} {text=}")
+        message_dict = {
+            "chat_id": chat_id,
+            "user_id": user_id,
+            "username": username,
+            "text": text,
+            "date": date
+        }
+
+        self.group_message_collection.insert_one(message_dict)
+
+    def get_last_group_messages(self, chat_id: int, limit: int = 50):
+        cursor = self.group_message_collection.find(
+            {"chat_id": chat_id}
+        ).sort("date", pymongo.DESCENDING).limit(limit)
+
+        messages = list(cursor)
+
+        # return chronological order
+        return list(reversed(messages))
 
     def check_if_user_exists(self, user_id: int, raise_exception: bool = False):
         if self.user_collection.count_documents({"_id": user_id}) > 0:
@@ -126,3 +168,28 @@ class Database:
             {"_id": dialog_id, "user_id": user_id},
             {"$set": {"messages": dialog_messages}}
         )
+
+        def save_question(self, question_text: str, embedding: list):
+            question_hash = hashlib.sha256(question_text.encode("utf-8")).hexdigest()
+            self.daily_question_collection.insert_one({
+                "question": question_text,
+                "hash": question_hash,
+                "embedding": embedding,
+                "date": datetime.utcnow()
+            })
+
+        def is_question_similar(self, new_embedding: list, threshold: float = 0.85) -> bool:
+            cursor = self.daily_question_collection.find({}, {"embedding": 1})
+            for doc in cursor:
+                old = doc.get("embedding")
+                if not old:
+                    continue
+                sim = self.cosine_similarity(old, new_embedding)
+                if sim >= threshold:
+                    return True
+            return False
+
+        @staticmethod
+        def cosine_similarity(a: list, b: list) -> float:
+            a, b = np.array(a), np.array(b)
+            return dot(a, b) / (norm(a) * norm(b))

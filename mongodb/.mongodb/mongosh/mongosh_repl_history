@@ -1,0 +1,3 @@
+mongodb://root:example@mongo:27017/admin
+db.getUser("root")
+use admin

@@ -1,3 +1,4 @@
+from email.mime import application
 import io
 import logging
 import asyncio
@@ -5,7 +6,11 @@ import traceback
 import html
 import json
 from datetime import datetime
-import openai
+from openai import OpenAI
+
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import daily_question
 
 import telegram
 from telegram import (
@@ -68,6 +73,7 @@ For example: "{bot_username} write a poem about Telegram"
 Powered by YesbhautikX 🚀
 """
 
+client = OpenAI(api_key=config.openai_api_key)
 
 def split_text_into_chunks(text, chunk_size):
     for i in range(0, len(text), chunk_size):
@@ -184,6 +190,19 @@ async def retry_handle(update: Update, context: CallbackContext):
 
 
 async def message_handle(update: Update, context: CallbackContext, message=None, use_new_dialog_timeout=True):
+
+    if update.message.chat.type in ["group", "supergroup"]:
+        user = update.message.from_user
+
+        db.save_group_message(
+            chat_id=update.message.chat.id,
+            user_id=user.id,
+            username=user.username or "",
+            text=update.message.text or "",
+            date=datetime.now()
+        )
+
+
     # check if bot was mentioned (for group chats)
     if not await is_bot_mentioned(update, context):
         return
@@ -651,6 +670,59 @@ async def post_init(application: Application):
         BotCommand("/help", "Show help message"),
     ])
 
+
+async def opinionated_analysis_handle(update: Update, context: CallbackContext):
+    if update.message.chat.type not in ["group", "supergroup"]:
+        await update.message.reply_text("This command only works in group chats.")
+        return
+
+    chat_id = update.message.chat.id
+    messages = db.get_last_group_messages(chat_id, limit=50)
+
+    if not messages:
+        await update.message.reply_text("No messages found to analyze.")
+        return
+
+    # Merge messages
+    combined_text = "\n".join(
+        f"{msg.get('username', 'Unknown')}: {msg.get('text', '')}" 
+        for msg in messages if msg.get("text")
+    )
+
+    combined_text = combined_text[:3000]  # Truncate if too long
+
+    # 💬 Custom prompt for opinionated feedback
+    prompt = f"""
+تو یه ناظر باهوشی هستی که داره یه گروه چت رو زیر نظر می‌گیره. پایین ۵۰ تا از آخرین پیام‌های اعضای گروه رو می‌بینی.
+
+فقط خلاصه نکن، رک و پوست‌کنده نظرت رو بگو، بی‌تعارف و بی‌سانسور:
+- حال و هوای کلی چت چی بود؟ جدی؟ خنده‌دار؟ چرت و پرت؟
+- آدما واقعاً درگیر بودن یا فقط الکی خودشونو نشون می‌دادن که هستن؟
+- کی واقعاً حرف حساب زد و کی فقط چرند گفت؟
+- کل این بحث مفید بود یا یه مشت وقت‌تلف‌کنی بی‌نتیجه؟
+- یه نصیحت درست‌درمون بهشون بکن که بفهمن چطوری باید درست و حسابی بحث کنن.
+- اگه یه سوال یا بحث مشخص مطرح شده، نظر خودت رو هم بی‌ملاحظه بگو، بدون اینکه بخوای کسی رو خوشحال یا ناراحت کنی. فقط راستشو بگو.
+
+متن چت:
+{combined_text}
+"""
+
+    try:
+        chatgpt = openai_utils.ChatGPT(model="gpt-4o")
+        chat_mode = db.get_user_attribute(update.message.from_user.id, "current_chat_mode")
+        response, *_ = await chatgpt.send_message(prompt, chat_mode=chat_mode)
+        await update.message.reply_text(f"🧠 Group Chat Feedback:\n\n{response}")
+    except Exception as e:
+        await update.message.reply_text(f"Failed to analyze messages: {e}")
+
+from telegram import Update
+from telegram.ext import CommandHandler, ContextTypes
+
+async def id_handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    logger.info(f"Received update: {update}")  # Log the full update
+    await update.message.reply_text(f"Chat ID: {chat.id}")
+
 def run_bot() -> None:
     application = (
         ApplicationBuilder()
@@ -694,9 +766,20 @@ def run_bot() -> None:
 
     application.add_error_handler(error_handle)
 
+    application.add_handler(CommandHandler("analyze", opinionated_analysis_handle, filters.ALL))
+
+    application.add_handler(CommandHandler("ask", lambda u, c: daily_question.send_daily_question(application)))
+
+    application.add_handler(CommandHandler("id", id_handle))
     # start the bot
     application.run_polling()
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(daily_question.send_daily_question, "cron", hour=20, minute=0, args=[application])
+    scheduler.start()
 
+    application.run_polling()
 
 if __name__ == "__main__":
     run_bot()
+
+
