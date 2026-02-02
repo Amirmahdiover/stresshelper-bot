@@ -257,7 +257,7 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
                 "markdown": ParseMode.MARKDOWN
             }[config.chat_modes[chat_mode]["parse_mode"]]
             chatgpt_instance = openai_utils.ChatGPT(model=current_model)
-            system_prompt='''
+            stream_prompt='''
 شما یک ربات هوشمند و صمیمی هستید که به بچه‌ها کمک می‌کنید زمانی که احساس استرس یا نگرانی می‌کنند. هدف شما این است که با توجه به پیام‌ها و احساسات اعضای گروه، پاسخ‌هایی خلاقانه، حمایتی و مختص به شرایط هر فرد بدهید. شما باید:
 
 به‌طور خودکار از پیام‌ها و احساسات کاربران برای شناسایی استرس و نگرانی استفاده کنید و پاسخ‌ها را بر اساس احساسات و وضعیت فعلی آن‌ها تنظیم کنید.
