@@ -1,5 +1,3 @@
-version: '3.8'   # recommended to add version
-
 services:
   mongo:
     container_name: mongo

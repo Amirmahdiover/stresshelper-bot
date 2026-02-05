@@ -2,53 +2,69 @@ import random
 import database
 from openai import OpenAI
 import config
+from telegram import Update
+from telegram.ext import CallbackContext
+
 
 db = database.Database()
 client = OpenAI(api_key=config.openai_api_key)
 
-themes = [
-    "سوالی شاعرانه و خیالی درباره احساسات بپرس.",
-    "سوالی بامزه و سبک درباره استرس روزمره بپرس.",
-    "سوالی تأمل‌برانگیز درباره کنار آمدن با اضطراب بپرس.",
-    "سوالی استعاری که استرس را به یک تصویر یا نماد تبدیل کند.",
-    "سوالی مانند چک‌این روزانه با لحن صمیمی و آرام.",
-]
-
-def get_embedding(text: str) -> list:
-    response = client.embeddings.create(
-        model="text-embedding-3-small",
-        input=text
-    )
-    return response.data[0].embedding
 
 async def generate_unique_question():
     from openai_utils import ChatGPT  # Import here to avoid circular import
     chatgpt = ChatGPT(model="gpt-4o-mini")
 
-    for _ in range(5):
-        theme = random.choice(themes)
-        system_prompt = f"""
-        تو یک ربات تلگرام مهربون و خلاق هستی. وظیفه‌ات اینه که هر شب یک سوال کوتاه و صمیمی بپرسی که به کاربر کمک کنه درباره احساسات یا استرس خودش فکر کنه. 
-        سوال را با لحن خودمانی، فارسی و به سبک موضوع زیر بنویس:
+    # Retrieve previous questions from the database
+    previous_questions = db.get_all_questions()
 
-        موضوع: {theme}
-        """
+    # Prepare the context from previous questions to ensure uniqueness
+    previous_questions_text = "\n".join([f"{i+1}. {q}" for i, q in enumerate(previous_questions)])
 
-        try:
-            answer, *_ = await chatgpt.send_message(system_prompt, dialog_messages=[], chat_mode="assistant")
-            question = answer.strip()
-            embedding = get_embedding(question)
+    # System prompt asking for a new, unique question
+    system_prompt = f"""
+    تو یک ربات تلگرام مهربون و خلاق هستی. وظیفه‌ات اینه که هر شب یک سوال کوتاه و صمیمی بپرسی که به کاربر کمک کنه درباره احساسات یا استرس خودش فکر کنه.
+    سوال را با لحن خودمانی و فارسی بنویس. همچنین از سوالات قبلی که پرسیده‌ای به هیچ وجه شبیه سوال جدید نباشد:
 
-            if not db.is_question_similar(embedding):
-                db.save_question(question, embedding)
-                return question
+    سوالات قبلی:
+    {previous_questions_text}
 
-        except Exception as e:
-            print(f"❌ Error: {e}")
+    لطفاً یک سوال جدید بنویس که هیچ شباهتی به سوالات قبلی نداشته باشد.
+    """
 
-    return "امشب نتونستم سوال تازه‌ای پیدا کنم. فردا دوباره امتحان می‌کنم."
+    try:
+        answer, *_ = await chatgpt.send_message(system_prompt, dialog_messages=[], chat_mode="assistant")
+        question = answer.strip()
 
-async def send_daily_question(application):
-    chat_id = config.daily_question_chat_id  # Add to config.py
+        # Check if the new question is unique by making sure it's not in the previous questions
+        if question not in previous_questions_text:
+            # Save the new question to the database and return it
+            db.save_question(question)
+            return question
+        else:
+            # If the question is too similar, return a fallback message
+            return "امشب نتونستم سوال تازه‌ای پیدا کنم. فردا دوباره امتحان می‌کنم."
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return "امشب نتونستم سوال تازه‌ای پیدا کنم. فردا دوباره امتحان می‌کنم."
+    
+
+
+async def ask_random(update: Update, context: CallbackContext):
+    chat = update.effective_chat
+    if chat.type not in ["group", "supergroup"]:
+        await update.message.reply_text("این دستور فقط در گروه‌ها کار می‌کند.")
+        return
+
     question = await generate_unique_question()
-    await application.bot.send_message(chat_id=chat_id, text=question)
+
+    # Use all-time usernames
+    usernames = db.get_all_unique_usernames_in_group(chat.id)
+
+    if usernames:
+        selected = random.sample(usernames, min(3, len(usernames)))
+        mentions = [f"@{u}" for u in selected]
+        text = f"{question}\n\nبیا صحبت کنیم! {' '.join(mentions)}"
+    else:
+        text = question
+
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
