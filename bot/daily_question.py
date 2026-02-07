@@ -4,7 +4,7 @@ from openai import OpenAI
 import config
 from telegram import Update
 from telegram.ext import CallbackContext
-
+from telegram.constants import ParseMode
 
 db = database.Database()
 client = OpenAI(api_key=config.openai_api_key)
