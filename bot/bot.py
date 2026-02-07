@@ -147,31 +147,33 @@ async def register_user_if_not_exists(update: Update, context: CallbackContext, 
 
 
 async def is_bot_mentioned(update: Update, context: CallbackContext):
-    logger.debug("Checking if bot is mentioned in the message from user: %s", update.message.from_user.id)
-    try:
-        message = update.message
-
-        # Check if the message is from a private chat
-        if message.chat.type == "private":
-            logger.info("Message is from a private chat, no need to check for bot mention.")
-            return True
-
-        # Check if the message mentions the bot by username
-        if message.text is not None and ("@" + context.bot.username) in message.text:
-            logger.info("Bot mentioned in the message: %s", message.text)
-            return True
-
-        # Check if the message is a reply to a message from the bot
-        if message.reply_to_message is not None:
-            if message.reply_to_message.from_user.id == context.bot.id:
-                logger.info("Bot mentioned in the reply: %s", message.reply_to_message.text)
-                return True
-    except Exception as e:
-        logger.error("Error while checking if bot is mentioned: %s", e)
-        return True
-    else:
-        logger.debug("Bot was not mentioned.")
+    message = update.message or update.edited_message
+    if message is None:
+        logger.debug("No message in update")
         return False
+
+    logger.debug(
+        "Checking if bot is mentioned in the message from user: %s",
+        message.from_user.id if message.from_user else "unknown"
+    )
+
+    try:
+        if message.chat.type == "private":
+            return True
+
+        if message.text and ("@" + context.bot.username) in message.text:
+            return True
+
+        if message.reply_to_message and message.reply_to_message.from_user:
+            if message.reply_to_message.from_user.id == context.bot.id:
+                return True
+
+    except Exception as e:
+        logger.error("Error while checking mention: %s", e)
+        return True
+
+    return False
+
 
 
 async def start_handle(update: Update, context: CallbackContext):
@@ -274,44 +276,48 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
 
 
 async def message_handle(update: Update, context: CallbackContext, message=None, use_new_dialog_timeout=True):
+    msg = update.message or update.edited_message
+    if msg is None:
+        logger.warning("Received update with neither message nor edited_message.")
+        return
 
-    if update.message.chat.type in ["group", "supergroup"]:
-        user = update.message.from_user
-        logger.info(f"Processing message from user {user.id} in group {update.message.chat.id}")
+    if msg.chat.type in ["group", "supergroup"]:
+        user = msg.from_user
+        logger.info(f"Processing message from user {user.id} in group {msg.chat.id}")
 
         db.save_group_message(
-            chat_id=update.message.chat.id,
+            chat_id=msg.chat.id,
             user_id=user.id,
             username=user.username or "",
-            text=update.message.text or "",
+            text=msg.text or "",
             date=datetime.now()
         )
         logger.info(f"Saved group message for user {user.id}.")
 
     # Check if bot was mentioned (for group chats)
     if not await is_bot_mentioned(update, context):
-        logger.info(f"Bot not mentioned in message from user {update.message.from_user.id}")
+        logger.info(f"Bot not mentioned in message from user {msg.from_user.id}")
         return
 
     # Check if message is edited
     if update.edited_message is not None:
-        logger.info(f"Message from user {update.message.from_user.id} was edited.")
+        logger.info(f"Message from user {msg.from_user.id} was edited.")
         await edited_message_handle(update, context)
         return
 
-    _message = message or update.message.text
-    logger.info(f"Received message from user {update.message.from_user.id}: {_message}")
+    _message = message or msg.text
+    logger.info(f"Received message from user {msg.from_user.id}: {_message}")
 
     # Remove bot mention (in group chats)
-    if update.message.chat.type != "private":
+    if msg.chat.type != "private":
         _message = _message.replace("@" + context.bot.username, "").strip()
         logger.info(f"Removed bot mention from message: {_message}")
 
-    await register_user_if_not_exists(update, context, update.message.from_user)
+    await register_user_if_not_exists(update, context, msg.from_user)
     if await is_previous_message_not_answered_yet(update, context):
         return
 
-    user_id = update.message.from_user.id
+    user_id = msg.from_user.id
     chat_mode = db.get_user_attribute(user_id, "current_chat_mode")
     logger.info(f"User {user_id} is in {chat_mode} mode.")
 
@@ -326,7 +332,10 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
             last_interaction_time = db.get_user_attribute(user_id, "last_interaction")
             if (datetime.now() - last_interaction_time).seconds > config.new_dialog_timeout and len(db.get_dialog_messages(user_id)) > 0:
                 db.start_new_dialog(user_id)
-                await update.message.reply_text(f"Starting new dialog due to timeout (<b>{config.chat_modes[chat_mode]['name']}</b> mode) ✅", parse_mode=ParseMode.HTML)
+                await msg.reply_text(
+                    f"Starting new dialog due to timeout (<b>{config.chat_modes[chat_mode]['name']}</b> mode) ✅",
+                    parse_mode=ParseMode.HTML
+                )
                 logger.info(f"Started new dialog for user {user_id} due to timeout.")
 
         db.set_user_attribute(user_id, "last_interaction", datetime.now())
@@ -337,16 +346,16 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
 
         try:
             # Send placeholder message to user
-            placeholder_message = await update.message.reply_text("...")
+            placeholder_message = await msg.reply_text("...")
             logger.info(f"Sent placeholder message to user {user_id}.")
 
             # Send typing action
-            await update.message.chat.send_action(action="typing")
+            await msg.chat.send_action(action="typing")
             logger.info(f"Sending typing action for user {user_id}.")
 
             if _message is None or len(_message) == 0:
                 logger.warning(f"User {user_id} sent an empty message.")
-                await update.message.reply_text("🥲 You sent <b>empty message</b>. Please, try again!", parse_mode=ParseMode.HTML)
+                await msg.reply_text("🥲 You sent <b>empty message</b>. Please, try again!", parse_mode=ParseMode.HTML)
                 return
 
             dialog_messages = db.get_dialog_messages(user_id, dialog_id=None)
@@ -354,10 +363,8 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
                 "html": ParseMode.HTML,
                 "markdown": ParseMode.MARKDOWN
             }[config.chat_modes[chat_mode]["parse_mode"]]
+
             chatgpt_instance = openai_utils.ChatGPT(model=current_model)
-            stream_prompt = '''
-            شما یک ربات هوشمند و صمیمی هستید که به بچه‌ها کمک می‌کنید زمانی که احساس استرس یا نگرانی می‌کنند...
-            '''
 
             if config.enable_message_streaming:
                 gen = chatgpt_instance.send_message_stream(_message, dialog_messages=dialog_messages, chat_mode=chat_mode)
@@ -382,16 +389,25 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
                     continue
 
                 try:
-                    await context.bot.edit_message_text(answer, chat_id=placeholder_message.chat_id, message_id=placeholder_message.message_id, parse_mode=parse_mode)
+                    await context.bot.edit_message_text(
+                        answer,
+                        chat_id=placeholder_message.chat_id,
+                        message_id=placeholder_message.message_id,
+                        parse_mode=parse_mode
+                    )
                     logger.info(f"Updated placeholder message for user {user_id} with new content.")
                 except telegram.error.BadRequest as e:
                     if str(e).startswith("Message is not modified"):
                         continue
                     else:
-                        await context.bot.edit_message_text(answer, chat_id=placeholder_message.chat_id, message_id=placeholder_message.message_id)
+                        await context.bot.edit_message_text(
+                            answer,
+                            chat_id=placeholder_message.chat_id,
+                            message_id=placeholder_message.message_id
+                        )
                         logger.warning(f"Failed to update placeholder message for user {user_id}: {e}")
 
-                await asyncio.sleep(0.01)  # Wait a bit to avoid flooding
+                await asyncio.sleep(0.01)
                 prev_answer = answer
 
             new_dialog_message = {"user": _message, "bot": answer, "date": datetime.now()}
@@ -412,16 +428,16 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
         except Exception as e:
             error_text = f"Something went wrong during completion. Reason: {e}"
             logger.error(f"Error for user {user_id}: {error_text}")
-            await update.message.reply_text(error_text)
+            await msg.reply_text(error_text)
             return
 
         # Send message if some messages were removed from the context
         if n_first_dialog_messages_removed > 0:
             if n_first_dialog_messages_removed == 1:
-                text = "✍️ <i>Note:</i> Your current dialog is too long, so your <b>first message</b> was removed from the context.\n Send /new command to start new dialog"
+                text = "✍️ <i>Note:</i> Your current dialog is too long, so your <b>first message</b> was removed from the context.\nSend /new command to start new dialog"
             else:
-                text = f"✍️ <i>Note:</i> Your current dialog is too long, so <b>{n_first_dialog_messages_removed} first messages</b> were removed from the context.\n Send /new command to start new dialog"
-            await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+                text = f"✍️ <i>Note:</i> Your current dialog is too long, so <b>{n_first_dialog_messages_removed} first messages</b> were removed from the context.\nSend /new command to start new dialog"
+            await msg.reply_text(text, parse_mode=ParseMode.HTML)
 
     async with user_semaphores[user_id]:
         task = asyncio.create_task(message_handle_fn())
@@ -430,14 +446,13 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
         try:
             await task
         except asyncio.CancelledError:
-            await update.message.reply_text("✅ Canceled", parse_mode=ParseMode.HTML)
+            await msg.reply_text("✅ Canceled", parse_mode=ParseMode.HTML)
             logger.info(f"Message handling cancelled for user {user_id}.")
-        else:
-            pass
         finally:
             if user_id in user_tasks:
                 del user_tasks[user_id]
                 logger.info(f"User {user_id}'s task removed from user_tasks.")
+
 
 async def is_previous_message_not_answered_yet(update: Update, context: CallbackContext):
     await register_user_if_not_exists(update, context, update.message.from_user)
@@ -454,36 +469,40 @@ async def is_previous_message_not_answered_yet(update: Update, context: Callback
 
 
 async def voice_message_handle(update: Update, context: CallbackContext):
-    # check if bot was mentioned (for group chats)
+
+    msg = update.message or update.edited_message
+    if msg is None or msg.voice is None:
+        return
+
     if not await is_bot_mentioned(update, context):
         return
 
-    await register_user_if_not_exists(update, context, update.message.from_user)
-    if await is_previous_message_not_answered_yet(update, context): return
+    await register_user_if_not_exists(update, context, msg.from_user)
 
-    user_id = update.message.from_user.id
+    if await is_previous_message_not_answered_yet(update, context):
+        return
+
+    user_id = msg.from_user.id
     db.set_user_attribute(user_id, "last_interaction", datetime.now())
 
-    voice = update.message.voice
+    voice = msg.voice
     voice_file = await context.bot.get_file(voice.file_id)
 
-    # store file in memory, not on disk
     buf = io.BytesIO()
     await voice_file.download_to_memory(buf)
-    buf.name = "voice.oga"  # file extension is required
-    buf.seek(0)  # move cursor to the beginning of the buffer
+    buf.name = "voice.oga"
+    buf.seek(0)
 
-    # Log voice message transcription start
-    logger.info(f"Transcribing voice message from user {user_id}.")
+    logger.info(f"Transcribing voice message from user {user_id}")
     transcribed_text = await openai_utils.transcribe_audio(buf)
-    logger.info(f"Voice message transcribed for user {user_id}: {transcribed_text}")
 
-    text = f"🎤: <i>{transcribed_text}</i>"
-    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+    await msg.reply_text(f"🎤: <i>{transcribed_text}</i>", parse_mode=ParseMode.HTML)
 
-    # Update n_transcribed_seconds
-    db.set_user_attribute(user_id, "n_transcribed_seconds", voice.duration + db.get_user_attribute(user_id, "n_transcribed_seconds"))
-    logger.info(f"Updated transcribed seconds for user {user_id}: {voice.duration} seconds.")
+    db.set_user_attribute(
+        user_id,
+        "n_transcribed_seconds",
+        voice.duration + db.get_user_attribute(user_id, "n_transcribed_seconds")
+    )
 
     await message_handle(update, context, message=transcribed_text)
 
